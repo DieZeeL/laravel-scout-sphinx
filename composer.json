@@ -1,5 +1,5 @@
 {
-    "name": "DieZeeL/laravel-scout-sphinx",
+    "name": "diezeel/laravel-scout-sphinx",
     "description": "Laravel Scout Sphinx Driver",
     "license": "MIT",
     "minimum-stability": "dev",
