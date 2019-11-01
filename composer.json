@@ -1,5 +1,5 @@
 {
-    "name": "constantable/laravel-scout-sphinx",
+    "name": "DieZeeL/laravel-scout-sphinx",
     "description": "Laravel Scout Sphinx Driver",
     "license": "MIT",
     "minimum-stability": "dev",
@@ -15,18 +15,18 @@
     "extra": {
         "laravel": {
             "providers": [
-                "Constantable\\SphinxScout\\ServiceProvider"
+                "DieZeeL\\SphinxScout\\ServiceProvider"
             ]
         }
     },
     "autoload": {
         "psr-4": {
-            "Constantable\\SphinxScout\\": "src/"
+            "DieZeeL\\SphinxScout\\": "src/"
         }
     },
     "autoload-dev": {
         "psr-4": {
-            "Constantable\\SphinxScout\\Tests\\": "tests/"
+            "DieZeeL\\SphinxScout\\Tests\\": "tests/"
         }
     }
 }
