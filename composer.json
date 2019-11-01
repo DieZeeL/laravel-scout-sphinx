@@ -1,5 +1,6 @@
 {
     "name": "diezeel/laravel-scout-sphinx",
+    "version": "2.2.1",
     "description": "Laravel Scout Sphinx Driver",
     "license": "MIT",
     "minimum-stability": "dev",
