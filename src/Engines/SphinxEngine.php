@@ -1,12 +1,16 @@
 <?php
 
-namespace DieZeeL\SphinxScout;
+namespace DieZeeL\SphinxScout\Engines;
 
+use Foolz\SphinxQL\Exception\ConnectionException;
+use Foolz\SphinxQL\Exception\DatabaseException;
+use Foolz\SphinxQL\Exception\SphinxQLException;
 use Foolz\SphinxQL\Helper;
 use Foolz\SphinxQL\SphinxQL;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
 use Laravel\Scout\Builder;
+use Laravel\Scout\EngineManager;
 use Laravel\Scout\Engines\Engine as AbstractEngine;
 use Laravel\Scout\Searchable;
 
@@ -21,7 +25,12 @@ class SphinxEngine extends AbstractEngine
     /**
      * @var array
      */
-    protected $whereIns = [];
+    //protected $whereIns = [];
+
+    /**
+     * @var array
+     */
+    protected $wheres = [];
 
     public function __construct($sphinx)
     {
@@ -89,8 +98,15 @@ class SphinxEngine extends AbstractEngine
      */
     public function search(Builder $builder)
     {
-        return $this->performSearch($builder)
-            ->execute();
+        try {
+            return $this->performSearch($builder)
+                ->execute();
+        } catch (DatabaseException| ConnectionException| SphinxQLException $e) {
+            if (false !== config('scout.fallback', false)) {
+                return app(EngineManager::class)->engine(config('scout.fallback'))->search($builder);
+            }
+        }
+        return [];
     }
 
     /**
@@ -104,6 +120,7 @@ class SphinxEngine extends AbstractEngine
     public function paginate(Builder $builder, $perPage, $page)
     {
         return $this->performSearch($builder)->limit($perPage * ($page - 1), $perPage)
+            ->option('max_matches', $perPage * $page)
             ->execute();
     }
 
@@ -161,8 +178,8 @@ class SphinxEngine extends AbstractEngine
                 $totalCount = $value["Value"];
             }
         }
-        if ($totalCount >= 1000)
-            $totalCount = 999;
+        //if ($totalCount >= 1000)
+        //    $totalCount = 999;
         return $totalCount;
     }
 
@@ -193,17 +210,21 @@ class SphinxEngine extends AbstractEngine
         $columns = array_keys($model->toSearchableArray());
 
         $query = $this->sphinx
-            ->select('*')
-            ->from($index)
-            ->match($columns, SphinxQL::expr('"' . $builder->query . '"/1'));
+            ->select('*', SphinxQL::expr('WEIGHT() AS __weight'))
+            ->from($index);
+            //->match($columns, SphinxQL::expr('"' . $builder->query . '"/1'));
+        $query = $this->performMatch($query, $builder->query);
 
-        foreach ($builder->wheres as $clause => $filters) {
-            $query->where($clause, '=', $filters);
+        if (isset($builder->wheres['__soft_deleted'])) {
+            $this->addWhere('__soft_deleted', '=', $builder->wheres['__soft_deleted']);
+        }
+        foreach ($this->wheres as $clause => $where) {
+            $query->where($clause, $where[0], $where[1]);
         }
 
-        foreach ($this->whereIns as $whereIn) {
-            $query->where(key($whereIn), 'IN', $whereIn[key($whereIn)]);
-        }
+        //foreach ($this->whereIns as $whereIn) {
+        //    $query->where(key($whereIn), 'IN', $whereIn[key($whereIn)]);
+        //}
 
         if ($builder->callback) {
             call_user_func(
@@ -212,9 +233,15 @@ class SphinxEngine extends AbstractEngine
             );
         }
 
-        foreach ($builder->orders as $order) {
-            $query->orderBy($order['column'], $order['direction']);
+        if (empty($builder->orders)) {
+            $query->orderBy('__weight', 'DESC');
+        } else {
+            foreach ($builder->orders as $order) {
+                $query->orderBy($order['column'], $order['direction']);
+            }
         }
+
+        $query->option('ranker', 'sph04');
 
         return $query;
     }
@@ -223,8 +250,65 @@ class SphinxEngine extends AbstractEngine
      * @param string $attribute
      * @param array $arrayIn
      */
-    public function addWhereIn(string $attribute, array $arrayIn)
+//    public function addWhereIn(string $attribute, array $arrayIn)
+//    {
+//        $this->whereIns[] = [$attribute => $arrayIn];
+//    }
+
+    /**
+     * use operators: =, >=, <=, <, >, IN, NOT IN, BETWEEN
+     * @param string $attribute
+     * @param string|array|null $operator
+     * @param string|array|null $value
+     */
+    public function addWhere(string $attribute, $operator = null, $value = null)
     {
-        $this->whereIns[] = array($attribute => $arrayIn);
+        if (func_num_args() < 3) {
+            $value = $operator;
+            $operator = "=";
+            if (is_array($value))
+                $operator = "IN";
+        }
+        $this->wheres[] = [$attribute => [$operator, $value]];
+    }
+
+    protected function performMatch(SphinxQL $query, string $search)
+    {
+        if (preg_match_all('/(?P<fields>([a-z]+\:\([\w\s]+\))|([a-z]+:\w+))/iu', $search, $matches)) {
+            $fields = array_filter($matches['fields']);
+            $search = str_replace($fields, '', $search);
+            foreach ($fields as $field) {
+                if (preg_match('/^(?P<field>\w+)\:\(?(?P<value>[\w\s]+)\)?/iu', $field, $match)) {
+                    if (in_array($match['field'], array_keys($model->toSearchableArray()))) {
+                        $query->match($match['field'], SphinxQL::expr('"' . $match['value'] . '"/1'));
+                    }
+                }
+            }
+        }
+        if (in_array('tags', array_keys($model->toSearchableArray()))) {
+            if (preg_match_all('/(?P<tags>(\#\([\w\s]+\))|(\#\w+))/iu', $search, $matches)) {
+                $tags = array_filter($matches['tags']);
+                $search = str_replace($tags, '', $search);
+                foreach ($tags as &$tag) {
+                    if (preg_match('/^\#\(?(?P<value>[\w\s]+)\)?/iu', $field, $match)) {
+                        $tag = $match['value'];
+                    }
+                    $query->where('tags', 'IN', $tags);
+                }
+            }
+        }
+        return $query->match(array_keys($model->toSearchableArray()), SphinxQL::expr('"' . $search . '"/1'));
+    }
+
+    /**
+     * Dynamically call the Sphinx client instance.
+     *
+     * @param string $method
+     * @param array $parameters
+     * @return mixed
+     */
+    public function __call($method, $parameters)
+    {
+        return $this->sphinx->$method(...$parameters);
     }
 }
