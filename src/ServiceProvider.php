@@ -2,6 +2,9 @@
 
 namespace DieZeeL\SphinxScout;
 
+use DieZeeL\SphinxScout\Engines\MySQLSimpleEngine;
+use DieZeeL\SphinxScout\Engines\SphinxEngine;
+use DieZeeL\SphinxScout\Entities\FieldEntity;
 use Foolz\SphinxQL\Drivers\Pdo\Connection;
 use Foolz\SphinxQL\SphinxQL;
 use Illuminate\Support\ServiceProvider as Provider;
@@ -21,9 +24,37 @@ class ServiceProvider extends Provider
 
             return new SphinxEngine(new SphinxQL($connection));
         });
-        Builder::macro('whereIn', function (string $attribute, array $arrayIn) {
-            $this->engine()->addWhereIn($attribute, $arrayIn);
+
+        resolve(EngineManager::class)->extend('mysqlsimple', function ($app) {
+            return new MySQLSimpleEngine();
+        });
+
+        $this->app->bind('FieldEntity', FieldEntity::class);
+
+        $this->registerMacro();
+    }
+
+    public function registerMacro()
+    {
+        Builder::macro('where', function (string $attribute, $operator = null, $value = null) {
+            if (func_num_args() < 3) {
+                $value = $operator;
+                $operator = "=";
+                if (is_array($value))
+                    $operator = "IN";
+            }
+            $this->wheres[] = [$attribute => [$operator, $value]];
             return $this;
+        });
+
+        Builder::macro('count', function () {
+            return $this->engine->getTotalCount(
+                $this->engine()->search($this)
+            );
+        });
+
+        Builder::macro('filter', function ($filters) {
+            return $this->engine()->addFilters($filters);
         });
     }
 }
