@@ -91,8 +91,10 @@ class Builder extends ScoutBuilder
         //$this->matches[$attribute] = '*'.$value.'*';
     }
 
-    public function filter(array $filters)
+    public function filter(array $filters = null)
     {
+        if(is_null($filters))
+            return $this;
         foreach ($filters as $field => $value) {
             if ($filter = $this->attributes->filters->get($field, false)) {
                 /** @var FieldEntity $filter */
