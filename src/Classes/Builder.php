@@ -75,6 +75,13 @@ class Builder extends ScoutBuilder
                     $this->wheres[] = [$attribute => [$operator, (int)$value]];
                 }
                 break;
+            case 'float':
+                if (is_array($value) && $operator != "IN") {
+                    $this->wheres[] = [$attribute => ["IN", array_map('floatval', $value)]];
+                } else {
+                    $this->wheres[] = [$attribute => [$operator, (float)$value]];
+                }
+                break;
             default:
                 if (is_array($value) && $operator != "IN") {
                     $this->wheres[] = [$attribute => ["IN", $value]];
@@ -87,13 +94,13 @@ class Builder extends ScoutBuilder
 
     public function match(string $attribute, $value)
     {
-        $this->matches[$attribute] = SphinxQL::expr('"*' . $value . '*"/1');
-        //$this->matches[$attribute] = '*'.$value.'*';
+        //$this->matches[$attribute] = SphinxQL::expr('"*' . $value . '*"/1');
+        $this->matches[$attribute] = $value;
     }
 
     public function filter(array $filters = null)
     {
-        if(is_null($filters))
+        if (is_null($filters))
             return $this;
         foreach ($filters as $field => $value) {
             if ($filter = $this->attributes->filters->get($field, false)) {
@@ -153,8 +160,8 @@ class Builder extends ScoutBuilder
      */
     public function withTrashed()
     {
-        foreach ($this->wheres as $key => $where){
-            if(Arr::exists($where,'__soft_deleted')){
+        foreach ($this->wheres as $key => $where) {
+            if (Arr::exists($where, '__soft_deleted')) {
                 unset($this->wheres[$key]);
             }
         }
@@ -173,7 +180,8 @@ class Builder extends ScoutBuilder
         });
     }
 
-    public function with($with){
+    public function with($with)
+    {
         $this->withes = is_array($with) ? $with : func_get_args();
         return $this;
     }
